@@ -39,7 +39,6 @@ _DOMAINS = {
 }
 
 _DETAIL_QUERY = """
-query JobDetails {
     j%s: jobView(listingId: %s, contextHolder: {queryString: "q", pageTypeEnum: SERP}) {
         header {
             adOrderSponsorshipLevel
@@ -58,6 +57,7 @@ query JobDetails {
         job {
             jobTitleText
             listingId
+            description
         }
         map { country }
         overview {
@@ -69,9 +69,7 @@ query JobDetails {
             squareLogoUrl
             website
         }
-        job { description }
     }
-}
 """
 
 
@@ -117,7 +115,15 @@ def fetch(
         headers["user-agent"] = user_agent
     session.headers.update(headers)
 
-    query = f"query JobDetails {{{_DETAIL_QUERY % (listing_id, listing_id)}}}"
+    # Inicializa sessão TLS/cookies via endpoint leve (necessário antes do /graph)
+    init_resp = session.get(
+        f"{base_url}/autocomplete/location"
+        "?locationTypeFilters=CITY,STATE,COUNTRY&caller=jobs&term="
+    )
+    if init_resp.status_code not in (200, 301, 302):
+        raise ValueError(f"Glassdoor bloqueou a inicialização de sessão: HTTP {init_resp.status_code}")
+
+    query = "query JobDetails {" + (_DETAIL_QUERY % (listing_id, listing_id)) + "}"
     response = session.post(
         f"{base_url}/graph",
         json=[{"operationName": "JobDetails", "variables": {}, "query": query}],
@@ -144,7 +150,9 @@ def _build_job(
     job_raw = view.get("job") or {}
     country = (view.get("map") or {}).get("country")
 
+    # "description" é uma string HTML direto no nó job
     html = job_raw.get("description")
+    title = job_raw.get("jobTitleText")
 
     if description_format == "markdown":
         description = html_to_markdown(html)
@@ -187,7 +195,7 @@ def _build_job(
     return JobDetail(
         site="glassdoor",
         job_url=f"{base_url}/job-listing/j?jl={listing_id}",
-        title=job_raw.get("jobTitleText"),
+        title=title,
         company=header.get("employerNameFromSearch"),
         company_url=(
             f"{base_url}/Overview/W-EI_IE{company_id}.htm" if company_id else None

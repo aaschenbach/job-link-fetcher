@@ -41,34 +41,35 @@ _COUNTRY_CODES = {
     "in": ("IN", "en"),
 }
 
-_JOB_QUERY = """
-query GetJobData($jobKey: String!, $countryCode: String!) {
-    jobData: jobView(input: {jobKey: $jobKey, countryCode: $countryCode}) {
-        job {
-            key
-            title
-            sourceEmployerName
-            dateOnIndeed
-            description { html }
-            location { countryCode admin1Code city }
-            compensation {
-                estimated { currencyCode baseSalary { unitOfWork range { ... on Range { min max } ... on AtLeast { min } ... on AtMost { max } ... on Exactly { value } } } }
-                baseSalary { unitOfWork range { ... on Range { min max } ... on AtLeast { min } ... on AtMost { max } ... on Exactly { value } } }
-                currencyCode
-            }
-            attributes { key }
-            employer {
-                relativeCompanyPageUrl
-                name
-                ugcStats { ratings { overallRating { value count } } }
-                dossier {
-                    employerDetails { addresses industry employeesLocalizedLabel revenueLocalizedLabel briefDescription }
-                    images { squareLogoUrl }
-                    links { corporateWebsite }
-                }
-            }
-            recruit { viewJobUrl }
+_JOB_FIELDS = """
+    key title sourceEmployerName dateOnIndeed
+    description { html }
+    location { countryCode admin1Code city }
+    compensation {
+        estimated { currencyCode baseSalary { unitOfWork range { ... on Range { min max } ... on AtLeast { min } ... on AtMost { max } ... on Exactly { value } } } }
+        baseSalary { unitOfWork range { ... on Range { min max } ... on AtLeast { min } ... on AtMost { max } ... on Exactly { value } } }
+        currencyCode
+    }
+    attributes { key }
+    employer {
+        relativeCompanyPageUrl name
+        ugcStats { ratings { overallRating { value count } } }
+        dossier {
+            employerDetails { addresses industry employeesLocalizedLabel revenueLocalizedLabel briefDescription }
+            images { squareLogoUrl }
+            links { corporateWebsite }
         }
+    }
+    recruit { viewJobUrl }
+"""
+
+_JOB_SEARCH_QUERY = """
+query GetJobData {
+    jobSearch(
+        limit: 1
+        filters: [{ keyword: { field: "jobKey", keys: ["%s"] } }]
+    ) {
+        results { job {""" + _JOB_FIELDS + """} }
     }
 }
 """
@@ -136,65 +137,18 @@ def fetch(
 
     response = session.post(
         _API_URL,
-        json={
-            "query": _JOB_QUERY,
-            "variables": {"jobKey": job_key, "countryCode": country_code},
-        },
+        json={"query": _JOB_SEARCH_QUERY % job_key},
     )
     check_status(response)
     data = response.json()
 
-    job_data = (data.get("data") or {}).get("jobData", {})
-    raw = (job_data or {}).get("job")
-    if not raw:
-        # fallback: busca pela query de search com filtro exato de key
-        raw = _fallback_search(session, job_key, country_code, language)
+    results = (((data.get("data") or {}).get("jobSearch") or {}).get("results") or [])
+    raw = results[0].get("job") if results else None
     if not raw:
         raise ValueError(f"Vaga não encontrada para job key: {job_key}")
 
     return _build_job(raw, job_key, base_url, country_code, description_format)
 
-
-def _fallback_search(session: RequestsRotating, job_key: str, country_code: str, language: str) -> dict | None:
-    """Usa a query de busca do JobSpy filtrando pela key exata."""
-    query = """
-    query GetJobData {
-        jobSearch(
-            limit: 1
-            filters: [{ keyword: { field: "jobKey", keys: ["%s"] } }]
-        ) {
-            results { job {
-                key title sourceEmployerName dateOnIndeed
-                description { html }
-                location { countryCode admin1Code city }
-                compensation {
-                    estimated { currencyCode baseSalary { unitOfWork range { ... on Range { min max } ... on AtLeast { min } ... on AtMost { max } ... on Exactly { value } } } }
-                    baseSalary { unitOfWork range { ... on Range { min max } ... on AtLeast { min } ... on AtMost { max } ... on Exactly { value } } }
-                    currencyCode
-                }
-                attributes { key }
-                employer {
-                    relativeCompanyPageUrl name
-                    ugcStats { ratings { overallRating { value count } } }
-                    dossier {
-                        employerDetails { addresses industry employeesLocalizedLabel revenueLocalizedLabel briefDescription }
-                        images { squareLogoUrl }
-                        links { corporateWebsite }
-                    }
-                }
-                recruit { viewJobUrl }
-            } }
-        }
-    }
-    """ % job_key
-
-    resp = session.post(_API_URL, json={"query": query})
-    if resp.status_code != 200:
-        return None
-    results = (((resp.json().get("data") or {}).get("jobSearch") or {}).get("results") or [])
-    if results and results[0].get("job"):
-        return results[0]["job"]
-    return None
 
 
 def _build_job(
