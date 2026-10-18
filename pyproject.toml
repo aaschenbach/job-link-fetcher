@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "job-link-fetcher"
+version = "0.1.0"
+description = "Busca dados completos de uma vaga a partir de sua URL (LinkedIn, Indeed, Glassdoor)"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.31",
+    "curl-cffi>=0.7",
+    "beautifulsoup4>=4.12",
+    "markdownify>=0.11",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-timeout"]
