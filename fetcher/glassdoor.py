@@ -89,7 +89,10 @@ def extract_listing_id(url: str) -> tuple[str, str]:
     qs = parse_qs(parsed.query)
     for param in ("jl", "jobListingId"):
         if param in qs:
-            return qs[param][0], base_url
+            values = [v for key in ("jl", "jobListingId") for v in qs.get(key, [])]
+            if len(set(values)) != 1 or not re.fullmatch(r"[0-9]{1,20}", values[0]):
+                raise ValueError("Identificador Glassdoor inválido ou ambíguo.")
+            return values[0], base_url
 
     path_match = re.search(r"[?&]jl=(\d+)", url)
     if path_match:
@@ -121,7 +124,7 @@ def fetch(
         "?locationTypeFilters=CITY,STATE,COUNTRY&caller=jobs&term="
     )
     if init_resp.status_code not in (200, 301, 302):
-        raise ValueError(f"Glassdoor bloqueou a inicialização de sessão: HTTP {init_resp.status_code}")
+        check_status(init_resp)
 
     query = "query JobDetails {" + (_DETAIL_QUERY % (listing_id, listing_id)) + "}"
     response = session.post(
@@ -136,6 +139,8 @@ def fetch(
     if not view:
         raise ValueError(f"Glassdoor não retornou dados para listing ID: {listing_id}")
 
+    if str((view.get("job") or {}).get("listingId")) != listing_id:
+        raise ValueError("Glassdoor retornou identidade divergente.")
     return _build_job(view, listing_id, base_url, description_format)
 
 

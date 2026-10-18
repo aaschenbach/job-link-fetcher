@@ -126,3 +126,23 @@ Para ambientes de produção ou alto volume, use o parâmetro `proxies`.
 ## Origem
 
 Este projeto foi criado como um extrator de URL única, complementar ao **[JobSpy](https://github.com/speedyapply/JobSpy)** — biblioteca que busca vagas por termo e localização em múltiplos job boards simultaneamente. A lógica de sessão HTTP, headers e parsing GraphQL foi derivada do código do JobSpy.
+
+
+## Integração com Headhunter V2
+
+O projeto irmão `headhunter` consome `fetch_job(url, description_format="markdown")`
+como dependência local editável. A integração usa fila persistente, intervalo
+mínimo de 60 segundos por plataforma, cooldown após 403/429 e cache das capturas.
+Não execute o teste de URLs em loop para retomar falhas do Google: use o cache.
+As sessões HTTP aguardam pelo menos três segundos entre suas requisições e
+`FetchHTTPError` expõe `status_code` e `retry_after` sem copiar respostas sensíveis.
+
+Retornos Indeed e Glassdoor precisam conter o ID solicitado; LinkedIn confere
+ID e rota da URL final. Hosts semelhantes, IDs ambíguos e URLs sem HTTPS são
+rejeitados. O chamador deve validar também descrição, identificação e possíveis
+bloqueios: uma resposta HTTP 200 por si só não comprova descrição válida.
+
+Homologação real de 18/10/2026: as três URLs do uso rápido retornaram descrições
+válidas; documentos Google foram criados e relidos, com IDs confirmados em uma
+planilha exclusiva de homologação. Evidências e comandos em
+`../headhunter/docs/integracao-descricoes.md`. Nenhuma coleta oficial nessa etapa.

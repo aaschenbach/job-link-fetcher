@@ -20,6 +20,7 @@ class RotatingProxySession:
 
     def __init__(self, proxies: list[str] | None = None) -> None:
         proxies = proxies or []
+        self._last_request = 0.0
         self.rotates = len(set(proxies)) > 1
         self.proxy_cycle = cycle(map(self._format, proxies)) if proxies else None
 
@@ -32,6 +33,10 @@ class RotatingProxySession:
         return {"http": proxy, "https": proxy}
 
     def request(self, *args: Any, **kwargs: Any) -> Any:
+        delay = 3.0 - (time.monotonic() - self._last_request)
+        if delay > 0:
+            time.sleep(delay)
+        self._last_request = time.monotonic()
         if self.proxy_cycle:
             kwargs["proxies"] = next(self.proxy_cycle)
         kwargs.setdefault("verify", self.verify)
@@ -59,9 +64,27 @@ class TLSRotating(RotatingProxySession, curl_requests.Session[curl_requests.Resp
         )
 
 
+class FetchHTTPError(ValueError):
+    """Status e Retry-After seguros, sem corpo, cabeçalhos ou tokens."""
+
+    def __init__(self, response):
+        from datetime import datetime, timezone
+        from email.utils import parsedate_to_datetime
+        self.status_code = response.status_code
+        raw = response.headers.get("Retry-After", "")
+        try:
+            self.retry_after = max(0, int(raw))
+        except (ValueError, TypeError):
+            try:
+                self.retry_after = max(0, int((parsedate_to_datetime(raw) - datetime.now(timezone.utc)).total_seconds()))
+            except (ValueError, TypeError, OverflowError):
+                self.retry_after = 0
+        super().__init__(f"HTTP {self.status_code}")
+
+
 def check_status(response: Any) -> None:
     if response.status_code != 200:
-        raise ValueError(f"HTTP {response.status_code}")
+        raise FetchHTTPError(response)
 
 
 def _as_markup(text: str) -> str:

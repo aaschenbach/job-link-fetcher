@@ -35,6 +35,9 @@ def fetch_job(
     JobDetail
         Modelo Pydantic com todos os campos da vaga.
     """
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.username or parsed.password or parsed.port not in (None, 443):
+        raise ValueError("URL de vaga deve usar HTTPS sem credenciais ou porta alternativa.")
     site = _detect_site(url)
     kwargs = dict(
         url=url,
@@ -57,10 +60,11 @@ def fetch_job(
 
 def _detect_site(url: str) -> str:
     hostname = urlparse(url).hostname or ""
-    if "linkedin.com" in hostname:
-        return "linkedin"
-    if "indeed.com" in hostname:
-        return "indeed"
-    if "glassdoor." in hostname:
-        return "glassdoor"
+    for site, domains in {
+        "linkedin": ("linkedin.com",),
+        "indeed": ("indeed.com", "indeed.com.br", "indeed.co.uk"),
+        "glassdoor": ("glassdoor.com", "glassdoor.com.br", "glassdoor.co.uk", "glassdoor.de", "glassdoor.fr", "glassdoor.com.au", "glassdoor.ca", "glassdoor.co.in"),
+    }.items():
+        if any(hostname == domain or hostname.endswith("." + domain) for domain in domains):
+            return site
     return hostname

@@ -51,7 +51,7 @@ _UPPER_LIMIT = 700000
 def extract_job_id(url: str) -> str | None:
     """Extrai o ID numérico da vaga a partir de uma URL do LinkedIn."""
     path = urlparse(url).path
-    match = re.search(r"/(\d+)/?$", path)
+    match = re.search(r"/(?:[^/]+-)?(\d+)/?$", path)
     return match.group(1) if match else None
 
 
@@ -81,6 +81,8 @@ def fetch(
     if not path.startswith("/jobs/view/"):
         raise ValueError(f"LinkedIn redirecionou para {path} (possível bloqueio)")
 
+    if extract_job_id(response.url) != job_id:
+        raise ValueError("LinkedIn retornou identidade divergente.")
     soup = BeautifulSoup(response.text, "html.parser")
 
     title_tag = soup.find("h1", class_=re.compile("job-details-jobs-unified-top-card__job-title"))
@@ -90,7 +92,7 @@ def fetch(
 
     company_tag = soup.find("a", class_=re.compile("job-details-jobs-unified-top-card__company-name"))
     if company_tag is None:
-        company_tag = soup.find("span", class_=re.compile("topcard__org-name"))
+        company_tag = soup.find(["a", "span"], class_=re.compile("topcard__org-name"))
     company = company_tag.get_text(strip=True) if company_tag else None
 
     company_url_tag = company_tag.get("href") if company_tag and company_tag.name == "a" else None

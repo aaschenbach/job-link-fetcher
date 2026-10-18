@@ -104,7 +104,10 @@ def extract_job_key(url: str) -> tuple[str, str]:
     qs = parse_qs(parsed.query)
     for param in ("jk", "vjk"):
         if param in qs:
-            return qs[param][0], subdomain
+            values = [v for key in ("jk", "vjk") for v in qs.get(key, [])]
+            if len(set(values)) != 1 or not re.fullmatch(r"[a-zA-Z0-9]{8,64}", values[0]):
+                raise ValueError("Identificador Indeed inválido ou ambíguo.")
+            return values[0], subdomain
 
     path_match = re.search(r"/jobs/view/([a-f0-9]+)", parsed.path)
     if path_match:
@@ -147,6 +150,8 @@ def fetch(
     if not raw:
         raise ValueError(f"Vaga não encontrada para job key: {job_key}")
 
+    if raw.get("key") != job_key:
+        raise ValueError("Indeed retornou identidade divergente.")
     return _build_job(raw, job_key, base_url, country_code, description_format)
 
 
